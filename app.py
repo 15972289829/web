@@ -1,77 +1,105 @@
-import streamlit as st  # 导入Streamlit库，并简写为st，用于构建Web应用。
-import requests  # 导入requests库，用于发送HTTP请求。
-import jieba  # 导入jieba库，用于中文分词。
-from collections import Counter  # 从collections库中导入Counter类，用于统计词频。
-from pyecharts.charts import WordCloud  # 从pyecharts库中导入WordCloud类，用于生成词云图。
-from pyecharts import options as opts  # 从pyecharts库中导入options模块，并简写为opts，用于配置图表。
-from streamlit.components.v1 import html  # 从streamlit.components.v1库中导入html函数，用于在Streamlit应用中显示HTML内容。
-import plotly.express as px  # 导入plotly.express库，并简写为px，用于创建交互式图表。
-import pandas as pd  # 导入pandas库，并简写为pd，用于数据处理。
+import streamlit as st
+import requests
+from bs4 import BeautifulSoup
+import jieba
+from collections import Counter
+import pandas as pd
+import plotly.express as px
+from pyecharts.charts import WordCloud, Radar
+from pyecharts import options as opts
+from streamlit.components.v1 import html
+import altair as alt
+import re
 
-# 设计文本输入框，用户输入文章URL
-url = st.text_input("请输入文章URL")  # 创建一个文本输入框，让用户输入文章的URL。
+# 设计文本输入框
+url = st.text_input("请输入文章的URL")
 
-# 请求URL抓取文本内容
-if url:  # 如果用户输入了URL，
-    try:  # 尝试执行以下代码，
-        response = requests.get(url)  # 发送GET请求到指定的URL。
-        response.raise_for_status()  # 如果请求失败，抛出异常。
-        text = response.text  # 获取响应的文本内容。
+# 如果用户输入了URL
+if url:
+    # 抓取文本内容
+    response = requests.get(url)
+    text = response.text
 
-        # 对文本分词，统计词频
-        words = jieba.cut(text)  # 使用jieba对文本进行分词。
-        word_counts = Counter(words)  # 使用Counter统计词频。
+    # 使用BeautifulSoup去除HTML标签
+    soup = BeautifulSoup(text, 'html.parser')
+    text = soup.get_text()
 
-        # 交互过滤低频词
-        min_freq = st.sidebar.slider("最小词频", 1, 100, 10)  # 在侧边栏创建一个滑块，让用户选择最小词频。
+    # 分词
+    words = jieba.cut(text)
 
-        # 过滤低频词
-        filtered_words = {word: count for word, count in word_counts.items() if count >= min_freq}  # 过滤掉词频小于用户设定值的词。
-        filtered_words = Counter(filtered_words)  # 将过滤后的词频转换回Counter对象。
+    # 去除标点符号
+    words = [word for word in words if word.strip() and not re.match(r'[^\w]', word)]
 
-        # 展示词频排名前20的词汇
-        top_words = filtered_words.most_common(20)  # 获取词频排名前20的词汇。
-        st.write("词频排名前20的词汇:")  # 显示标题。
-        st.write(top_words)  # 显示排名前20的词汇。
+    word_counts = Counter(words)
 
-        # 使用pyecharts绘制词云
-        wordcloud = WordCloud()  # 创建一个WordCloud对象。
-        wordcloud.add("", list(filtered_words.items()), word_size_range=[20, 100])  # 向词云中添加数据，并设置字体大小范围。
-        wordcloud.set_global_opts(title_opts=opts.TitleOpts(title="词云图"))  # 设置词云图的全局配置，如标题。
-        wordcloud_html = wordcloud.render_embed()  # 将词云图渲染为HTML。
-        html(wordcloud_html, height=600)  # 在Streamlit应用中显示词云图。
+    # 交互过滤低频词
+    min_frequency = st.sidebar.slider("设置最低词频", 1, 100, 10)
+    filtered_word_counts = {word: count for word, count in word_counts.items() if count >= min_frequency}
 
-        # 构建 streamlit的st.sidebar进行图型筛选
-        chart_type = st.sidebar.selectbox("选择图表类型", ["柱状图", "饼图", "线图", "散点图", "面积图", "箱型图", "K线图"])  # 在侧边栏创建一个下拉框，让用户选择图表类型。
+    # 展示词频排名前20的词汇
+    top_20_words = Counter(filtered_word_counts).most_common(20)
 
-        # 根据选择的图表类型绘制图表
-        if chart_type == "柱状图":
-            st.bar_chart([(word, count) for word, count in top_words])  # 如果选择柱状图，使用Streamlit的bar_chart函数显示词频数据。
-        elif chart_type == "饼图":
-            fig = px.pie(values=[count for word, count in top_words], names=[word for word, count in top_words], title="词频饼图")  # 如果选择饼图，使用Plotly Express创建饼图。
-            st.plotly_chart(fig)  # 在Streamlit应用中显示饼图。
-        elif chart_type == "线图":
-            df = pd.DataFrame(top_words, columns=['Word', 'Count'])  # 如果选择线图，将数据转换为DataFrame。
-            fig = px.line(df, x='Word', y='Count', title="词频趋势图")  # 使用Plotly Express创建线图。
-            st.plotly_chart(fig)  # 显示线图。
-        elif chart_type == "散点图":
-            df = pd.DataFrame(top_words, columns=['Word', 'Count'])  # 如果选择散点图，将数据转换为DataFrame。
-            fig = px.scatter(df, x='Word', y='Count', title="词频散点图")  # 使用Plotly Express创建散点图。
-            st.plotly_chart(fig)  # 显示散点图。
-        elif chart_type == "面积图":
-            df = pd.DataFrame(top_words, columns=['Word', 'Count'])  # 如果选择面积图，将数据转换为DataFrame。
-            fig = px.area(df, x='Word', y='Count', title="词频面积图")  # 使用Plotly Express创建面积图。
-            st.plotly_chart(fig)  # 显示面积图。
-        elif chart_type == "箱型图":
-            df = pd.DataFrame(top_words, columns=['Word', 'Count'])  # 如果选择箱型图，将数据转换为DataFrame。
-            fig = px.box(df, x='Word', y='Count', title="词频箱型图")  # 使用Plotly Express创建箱型图。
-            st.plotly_chart(fig)  # 显示箱型图。
-        elif chart_type == "K线图":
-            df = pd.DataFrame(top_words, columns=['Word', 'Count'])  # 如果选择K线图，将数据转换为DataFrame。
-            fig = px.line(df, x='Word', y='Count', title="词频K线图")  # 使用Plotly Express创建折线图作为K线图的替代。
-            st.plotly_chart(fig)  # 显示K线图。
+    # 将词频排名转为 DataFrame
+    df_top_20 = pd.DataFrame(top_20_words, columns=['词汇', '频次'])
 
-    except requests.RequestException as e:  # 如果请求过程中发生异常，
-        st.error(f"请求错误: {e}")  # 在Streamlit应用中显示错误信息。
-    except Exception as e:  # 如果发生其他异常，
-        st.error(f"发生错误: {e}")  # 在Streamlit应用中显示错误信息。
+    # 在表格中展示
+    st.write("词频排名前20的词汇（表格展示）:")
+    st.table(df_top_20)
+
+    # 图型筛选
+    chart_type = st.sidebar.selectbox("选择图表类型", ["词云", "饼图", "折线图", "散点图", "雷达图", "面积图", "树状图",
+                                                       "Altair条形图"])
+
+    # 根据选择的图表类型显示不同的图表
+    if chart_type == "词云":
+        # 生成词云
+        wordcloud = WordCloud()
+        wordcloud.add("", top_20_words, word_size_range=[20, 100])
+        wordcloud.set_global_opts(title_opts=opts.TitleOpts(title="词云"))
+        # 显示词云
+        wordcloud_html = wordcloud.render_embed()
+        html(wordcloud_html, height=800)
+    elif chart_type == "饼图":
+        # 使用饼图展示词频
+        fig_pie = px.pie(df_top_20, values='频次', names='词汇', title='饼图')
+        st.plotly_chart(fig_pie)
+    elif chart_type == "折线图":
+        # 使用折线图展示词频
+        fig_line = px.line(df_top_20, x='词汇', y='频次', title='折线图')
+        st.plotly_chart(fig_line)
+    elif chart_type == "散点图":
+        # 使用散点图展示词频
+        fig_scatter = px.scatter(df_top_20, x='词汇', y='频次', title='散点图')
+        st.plotly_chart(fig_scatter)
+    elif chart_type == "雷达图":
+        # 使用雷达图展示词频
+        words, frequencies = zip(*top_20_words)
+        radar_schema = [
+            opts.RadarIndicatorItem(name=word, max_=max(frequencies)) for word in words
+        ]
+        radar = Radar()
+        radar.add_schema(schema=radar_schema)
+        radar.add('', [list(frequencies)], color='#f9713c')
+        radar.set_global_opts(title_opts=opts.TitleOpts(title='雷达图'))
+        radar_html = radar.render_embed()
+        html(radar_html, height=500)
+    elif chart_type == "面积图":
+        # 使用面积图展示词频
+        fig_area = px.area(df_top_20, x='词汇', y='频次', title='面积图')
+        st.plotly_chart(fig_area)
+    elif chart_type == "树状图":
+        # 使用树形图展示词频
+        fig_treemap = px.treemap(df_top_20, path=['词汇'], values='频次', title='树状图')
+        st.plotly_chart(fig_treemap)
+    elif chart_type == "Altair条形图":
+        chart = alt.Chart(df_top_20).mark_bar().encode(
+            x=alt.X('词汇:N', sort='-y'),
+            y='频次:Q',
+            color=alt.Color('频次:Q', scale=alt.Scale(scheme='viridis')),
+            tooltip=['词汇', '频次']
+        ).properties(
+            width=600,
+            height=400,
+            title='词频分析条形图 (Altair版本)'
+        ).interactive()
+        st.altair_chart(chart, use_container_width=True)
